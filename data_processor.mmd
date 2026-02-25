@@ -1,0 +1,72 @@
+---
+config:
+  layout: elk
+---
+flowchart TB
+ subgraph DATASET["Archivo de Datos (mallas)"]
+        D1["Columna de identificadores por grupo<br/>(ej. municipio, estado)<br/><i>Obligatorio</i>"]
+        D2["Variables preprocesadas y agrupadas<br/>(categóricas y numéricas)"]
+  end
+ subgraph ALIAS["Archivo de Alias"]
+        A1["Columna de nombres de variables<br/>(tal como aparecen en el archivo de datos)<br/><i>Obligatorio</i>"]
+        A2["Columna de alias/nombres alternativos<br/><i>Obligatorio</i>"]
+  end
+ subgraph CONFIG["Archivo de Configuración (.json)"]
+        C1["rutas_csv_mallas<br/>(dict: nombre_malla → ruta CSV)"]
+        C2["ruta_csv_dataframe_alias<br/>ruta_csv_salida"]
+        C3["columna_dataframe_alias_nombres<br/>columna_dataframe_alias_alias"]
+        C4["variables_identificadoras<br/>(ej. municipio)"]
+        C5["variables_excluidas_list<br/>variables_excluidas_regex"]
+        C6["variables_a_procesar_list<br/>variables_a_procesar_regex"]
+        C7["q: número de cuantiles"]
+  end
+ subgraph INPUTS["📥 Archivos de Entrada"]
+    direction TB
+        DATASET
+        ALIAS
+        CONFIG
+  end
+ subgraph EXCLUSION["🚫 Exclusión de Variables"]
+        E1["variables_excluidas_list<br/>(lista explícita)"]
+        E2["variables_excluidas_regex<br/>(patrones regex)"]
+  end
+ subgraph SIN_NORM["Sin normalización<br/>(clave: None)"]
+        SN1@{ label: "variables_a_procesar_list<br/>{ 'None': [...] }" }
+        SN2@{ label: "variables_a_procesar_regex<br/>{ 'None': ['regex...'] }" }
+  end
+ subgraph CON_NORM["Con normalización<br/>(clave: variable base)"]
+        CN1@{ label: "variables_a_procesar_list<br/>{ 'conteo::total_datos': [...] }" }
+        CN2@{ label: "variables_a_procesar_regex<br/>{ 'conteo::total_datos': ['regex...'] }" }
+        CN3["÷ Se divide cada variable<br/>entre la variable base"]
+  end
+ subgraph PROCESAR["variables_a_procesar"]
+    direction LR
+        SIN_NORM
+        CON_NORM
+  end
+ subgraph CUANTILES["Clasificación en Cuantiles"]
+        Q1["Divide cada variable en<br/>q categorías (bins)"]
+        Q2["Asigna intervalo y entidades<br/>por bin y por malla"]
+        Q3@{ label: "Agrega fila 'Sin clasificar'<br/>si aplica" }
+  end
+ subgraph OUTPUT["📤 Archivo de Salida (formato largo)"]
+        O1["name — Nombre descriptivo de la variable"]
+        O2["code — Alias/código de la variable"]
+        O3["bin — Número de categoría (1 a q)"]
+        O4["interval_{malla} — Intervalo numérico/porcentaje<br/>(ej. interval_mun)"]
+        O5["cells_{malla} — Entidades en esa categoría<br/>(ej. municipios)"]
+  end
+    DATASET -- Datos agrupados --> PROC["Procesador"]
+    ALIAS -- Mapeo nombres ↔ alias --> PROC
+    CONFIG -- Parámetros --> PROC
+    C5 --> EXCLUSION
+    EXCLUSION -- Filtra variables --> PROC
+    C6 --> PROCESAR
+    PROCESAR -- Variables seleccionadas<br/>y normalizadas --> CUANTILES
+    CUANTILES --> OUTPUT
+    PROC --> CUANTILES
+    SN1@{ shape: rect}
+    SN2@{ shape: rect}
+    CN1@{ shape: rect}
+    CN2@{ shape: rect}
+    Q3@{ shape: rect}

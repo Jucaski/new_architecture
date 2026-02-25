@@ -1,0 +1,67 @@
+flowchart TD
+
+    subgraph FUENTES["📦 Fuentes de Datos Principales"]
+        direction LR
+
+        subgraph SNIB["SNIB\n(Sistema Nacional de Información\nsobre Biodiversidad de México)"]
+            S1["🐾 45M+ registros de presencia\n114K+ especies"]
+            S2["📄 Fichas técnicas de especies\nnativas y exóticas"]
+            S3["🗺️ Mapas, imágenes satelitales\ny fotografías de ecosistemas"]
+        end
+
+        subgraph GBIF["GBIF\n(Sistema Global de Información\nsobre Biodiversidad)"]
+            G1["🌐 Red internacional de nodos\ncoordinada desde Copenhague"]
+            G2["📐 Estándar Darwin Core\npara registros de especies"]
+            G3["🔓 Datos abiertos bajo\nlicencias Creative Commons"]
+        end
+
+        subgraph WORLDCLIM["WorldClim\n(Base de Datos Meteorológicos\ny Climáticos Globales)"]
+            W1["🌡️ Temperatura mín/media/máx\nPrecipitación, radiación, viento"]
+            W2["🧬 19 variables bioclimáticas"]
+            W3["📏 Resoluciones: 30s (~1km²)\nhasta 10min (~340km²)"]
+        end
+    end
+
+    subgraph API_FUENTE["🔌 Endpoints por Fuente de Datos"]
+        direction TB
+
+        EP1["GET /info\n→ name, description,\nsource_url, download_url, dict_url"]
+
+        EP2["GET /variables\n→ id, name, level_size,\nfilter_fields, available_grids, metadata"]
+
+        EP3["GET /variables/:id\n→ niveles de la variable\n(params: q, offset, limit)"]
+
+        EP4["GET /get-data/:id\n→ cells por nivel y malla\n(params: grid_id, levels_id,\nfilter_names, filter_values)"]
+    end
+
+    subgraph SCHEMAS["🗂️ Esquemas de Datos"]
+        direction TB
+
+        SC1["Filter\n• name: string\n• value: string"]
+
+        SC2["Variable State\n• variableId\n• datasetId\n• levelId\n• filters → array[Filter]"]
+
+        SC3["Ensamble\n• target → array[VariableState]\n• covariables → array[VariableState]\n• grid-id: string\n• precision: float"]
+    end
+
+    subgraph SERVICIO["⚙️ Servicio de Procesamiento de Ensambles"]
+        direction TB
+
+        SV1["GET /region-grids\n→ id, region, grid\n(param: q)"]
+
+        SV2["GET /region-grids/:id\n→ GeoJSON de la malla"]
+
+        SV3["GET /datasets\n→ id, name\n(listado de fuentes disponibles)"]
+
+        SV4["GET /datasets/:id\n→ URL base para endpoints\nde la fuente de datos"]
+
+        SV5["🧮 Cálculo de\nscore y épsilon\npor ensamble"]
+    end
+
+    FUENTES -->|"Expone datos vía"| API_FUENTE
+    API_FUENTE -->|"Datos de variables\npor malla y nivel"| SERVICIO
+    SC3 -->|"Define el ensamble\na procesar"| SERVICIO
+    SC2 -->|"Estado de variables\n(target y covariables)"| SC3
+    SC1 -->|"Filtros aplicados\na cada variable"| SC2
+    SV4 -->|"Conecta con"| API_FUENTE
+    SERVICIO --> OUT["📊 Ensamble procesado\ncon scores y épsilons\npor malla y región"]

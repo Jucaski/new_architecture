@@ -1,0 +1,34 @@
+graph TD
+    subgraph "Endpoints del Servicio"
+        RG["<b>GET /region-grids</b><br/>Listado de mallas (resolución/región)"]
+        RGID["<b>GET /region-grids/:id</b><br/>GeoJSON de la malla"]
+        DTS["<b>GET /datasets</b><br/>Listado de fuentes disponibles"]
+        DTSID["<b>GET /datasets/:id</b><br/>URL base de la fuente específica"]
+    end
+
+    subgraph "Jerarquía de Esquemas (JSON Schema)"
+        direction TB
+        FIL[<b>Tipo Filtro</b><br/>name, value]
+        
+        VAR[<b>Tipo Estado Variable</b><br/>variableId, datasetId, levelId]
+        
+        ENS[<b>Tipo Ensamble</b><br/>target, covariables, grid-id, precision]
+
+        FIL -- "contenido en" --> VAR
+        VAR -- "define 'target' y 'covariables'" --> ENS
+    end
+
+    subgraph "Funciones del Procesamiento"
+        EXP_M["Exponer Mallas Espaciales"]
+        EXP_V["Exponer Variables Disponibles"]
+        CALC{{"Motor de Cálculo<br/>Score y Épsilon"}}
+    end
+
+    %% Conexiones lógicas
+    RG & RGID --> EXP_M
+    DTS & DTSID --> EXP_V
+    ENS --> CALC
+    EXP_M & EXP_V -.-> CALC
+
+    style CALC fill:#f96,stroke:#333,stroke-width:2px
+    style ENS fill:#bbf,stroke:#333
