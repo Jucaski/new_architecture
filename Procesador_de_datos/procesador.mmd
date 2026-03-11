@@ -1,114 +1,154 @@
-flowchart TD
-    A([START]) --> B[Parse CLI args<br/>--config path]
-    B --> C[Load JSON config file]
-    C --> D{Validate required fields}
-
-    D -->|Missing field| E([RAISE ValueError /<br/>FileNotFoundError])
-    D -->|All valid| F[Load alias CSV →<br/>dataframe_alias]
-
-    F --> G[For each malla in<br/>rutas_csv_mallas:<br/>load CSV with id cols as str]
-    G --> H[Build dataframes_mallas dict]
-
-    H --> I[/ejecutar_procesamiento<br/>LUGARES/]
-
-    subgraph EP [ejecutar_procesamiento]
-        EP1[Instantiate Procesador] --> EP2
-
-        subgraph PINIT [Procesador.__init__]
-            EP2[Validate all params] --> EP3
-            EP3[Build alias dict<br/>variable → nombre] --> EP4
-            EP4[Build descripcion dict<br/>optional] --> EP5
-            EP5[Find variables to exclude<br/>from explicit list] --> EP6
-            EP6[Find variables to exclude<br/>via regex on all DFs] --> EP7
-            EP7[Find vars missing from alias dict<br/>→ auto-exclude] --> EP8
-            EP8[Drop excluded cols from<br/>each malla DataFrame<br/>except id cols]
-        end
-
-        EP2 --> PINIT
-        PINIT --> EP9{variables_a_procesar_list<br/>provided?}
-        EP9 -->|Yes| EP10[procesar_multiples_variables_list]
-        EP9 -->|No| EP12
-        EP10 --> EP11[Returns dict:<br/>base_norm → DataFrame]
-        EP11 --> EP12{variables_a_procesar_regex<br/>provided?}
-        EP12 -->|Yes| EP13[procesar_multiples_variables_regex]
-        EP12 -->|No| EP15
-        EP13 --> EP14[Returns dict:<br/>base_norm → DataFrame]
-        EP14 --> EP15[Concat list + regex results]
-    end
-
-    subgraph PML [procesar_multiples_variables_list]
-        PML1[For each base_norm, var_list in dicc] --> PML2
-        PML2{base_norm in<br/>excluded/id vars?} -->|Yes| PML3[Skip & warn]
-        PML2 -->|No| PML4[For each var in list]
-        PML4 --> PML5{var in<br/>excluded/id vars?} -->|Yes| PML6[Skip & warn]
-        PML5 -->|No| PML7[procesar_variable]
-        PML7 --> PML8[Append result DataFrame]
-        PML8 --> PML4
-        PML6 --> PML4
-        PML3 --> PML1
-        PML8 --> PML9[pd.concat all results<br/>per base_norm]
-    end
-
-    subgraph PMR [procesar_multiples_variables_regex]
-        PMR1[For each base_norm, regex_list in dicc] --> PMR2
-        PMR2{base_norm in<br/>excluded/id vars?} -->|Yes| PMR3[Skip & warn]
-        PMR2 -->|No| PMR4[Combine regexes into<br/>single pattern via OR]
-        PMR4 --> PMR5[Scan all malla DFs<br/>for matching column names]
-        PMR5 --> PMR6{Any matches?}
-        PMR6 -->|No| PMR7[Skip & warn]
-        PMR6 -->|Yes| PMR8[For each matched var]
-        PMR8 --> PMR9{var in<br/>excluded/id vars?} -->|Yes| PMR10[Skip & warn]
-        PMR9 -->|No| PMR11[procesar_variable]
-        PMR11 --> PMR12[Append result DataFrame]
-        PMR12 --> PMR8
-        PMR10 --> PMR8
-        PMR7 --> PMR1
-        PMR12 --> PMR13[pd.concat all results<br/>per base_norm]
-    end
-
-    subgraph PV [procesar_variable]
-        PV1[Validate params] --> PV2
-        PV2[For each malla:<br/>check if var &<br/>base_norm exist] --> PV3
-        PV3{var exists in<br/>at least one malla?} -->|No| PV4([RAISE ValueError])
-        PV3 -->|Yes| PV5[Get nombre & codigo<br/>from alias dict]
-        PV5 --> PV6[For each malla where<br/>var exists:]
-        PV6 --> PV7[normalizar_variable:<br/>df var / base_norm<br/>or raw if None]
-        PV7 --> PV8[categorizar_variable:<br/>pd.qcut into q quantiles<br/>duplicates=drop]
-        PV8 --> PV9[Add NaN category<br/>fill NaN → NaN bin]
-        PV9 --> PV10[For each row:<br/>build entity string<br/>from id cols]
-        PV10 --> PV11[Group entities<br/>by interval → cells dict]
-        PV11 --> PV12[Remove NaN bin<br/>if empty]
-        PV12 --> PV13[Store sorted intervals<br/>& cells per malla]
-        PV13 --> PV14[For i in range q+1:<br/>build result row<br/>with interval_malla &<br/>cells_malla columns]
-        PV14 --> PV15[cells list → PostgreSQL<br/>array string format]
-        PV15 --> PV16[Drop all-NA bins]
-        PV16 --> PV17[Return result DataFrame]
-    end
-
-    EP10 --> PML
-    EP13 --> PMR
-    PML7 --> PV
-    PMR11 --> PV
-
-    EP15 --> EP16[Add variable_name col<br/>split name on '-']
-    EP16 --> EP17[Sort by variable_name,<br/>name, bin]
-    EP17 --> EP18[Re-index bin per variable_name<br/>cumcount + 1]
-    EP18 --> EP19[Drop variable_name col]
-    EP19 --> EP20[Return resultado DataFrame]
-
+---
+config:
+  layout: elk
+---
+flowchart TB
+ subgraph PINIT["Procesador.__init__"]
+        EP3["Build alias dict<br>variable → nombre"]
+        EP2["Validate all params"]
+        EP4["Build descripcion dict<br>optional"]
+        EP5["Find variables to exclude<br>from explicit list"]
+        EP6["Find variables to exclude<br>via regex on all DFs"]
+        EP7["Find vars missing from alias dict<br>→ auto-exclude"]
+        EP8["Drop excluded cols from<br>each malla DataFrame<br>except id cols"]
+  end
+ subgraph EP["ejecutar_procesamiento"]
+        EP1["Instantiate Procesador"]
+        PINIT
+        EP9{"variables_a_procesar_list<br>provided?"}
+        EP10["procesar_multiples_variables_list"]
+        EP12{"variables_a_procesar_regex<br>provided?"}
+        EP11["Returns dict:<br>base_norm → DataFrame"]
+        EP13["procesar_multiples_variables_regex"]
+        EP15["Concat list + regex results"]
+        EP14["Returns dict:<br>base_norm → DataFrame"]
+  end
+ subgraph PML["procesar_multiples_variables_list"]
+        PML2{"base_norm in<br>excluded/id vars?"}
+        PML1["For each base_norm, var_list in dicc"]
+        PML3["Skip & warn"]
+        PML4["For each var in list"]
+        PML6["Skip & warn"]
+        PML5{"var in<br>excluded/id vars?"}
+        PML7["procesar_variable"]
+        PML8["Append result DataFrame"]
+        PML9["pd.concat all results<br>per base_norm"]
+  end
+ subgraph PMR["procesar_multiples_variables_regex"]
+        PMR2{"base_norm in<br>excluded/id vars?"}
+        PMR1["For each base_norm, regex_list in dicc"]
+        PMR3["Skip & warn"]
+        PMR4["Combine regexes into<br>single pattern via OR"]
+        PMR5["Scan all malla DFs<br>for matching column names"]
+        PMR6{"Any matches?"}
+        PMR7["Skip & warn"]
+        PMR8["For each matched var"]
+        PMR10["Skip & warn"]
+        PMR9{"var in<br>excluded/id vars?"}
+        PMR11["procesar_variable"]
+        PMR12["Append result DataFrame"]
+        PMR13["pd.concat all results<br>per base_norm"]
+  end
+ subgraph PV["procesar_variable"]
+        PV2["For each malla:<br>check if var &amp;<br>base_norm exist"]
+        PV1["Validate params"]
+        PV3{"var exists in<br>at least one malla?"}
+        PV4(["RAISE ValueError"])
+        PV5["Get nombre &amp; codigo<br>from alias dict"]
+        PV6["For each malla where<br>var exists:"]
+        PV7["normalizar_variable:<br>df var / base_norm<br>or raw if None"]
+        PV8["categorizar_variable:<br>pd.qcut into q quantiles<br>duplicates=drop"]
+        PV9["Add NaN category<br>fill NaN → NaN bin"]
+        PV10["For each row:<br>build entity string<br>from id cols"]
+        PV11["Group entities<br>by interval → cells dict"]
+        PV12["Remove NaN bin<br>if empty"]
+        PV13["Store sorted intervals<br>&amp; cells per malla"]
+        PV14["For i in range q+1:<br>build result row<br>with interval_malla &amp;<br>cells_malla columns"]
+        PV15["cells list → PostgreSQL<br>array string format"]
+        PV16["Drop all-NA bins"]
+        PV17["Return result DataFrame"]
+  end
+    A(["START"]) --> B["Parse CLI args<br>--config path"]
+    B --> C["Load JSON config file"]
+    C --> D{"Validate required fields"}
+    D -- Missing field --> E(["RAISE ValueError /<br>FileNotFoundError"])
+    D -- All valid --> F["Load alias CSV →<br>dataframe_alias"]
+    F --> G["For each malla in<br>rutas_csv_mallas:<br>load CSV with id cols as str"]
+    G --> H["Build dataframes_mallas dict"]
+    H --> I[/"ejecutar_procesamiento<br>LUGARES"/]
+    EP1 --> EP2
+    EP2 --> EP3 & PINIT
+    EP3 --> EP4
+    EP4 --> EP5
+    EP5 --> EP6
+    EP6 --> EP7
+    EP7 --> EP8
+    PINIT --> EP9
+    EP9 -- Yes --> EP10
+    EP9 -- No --> EP12
+    EP10 --> EP11 & PML
+    EP11 --> EP12
+    EP12 -- Yes --> EP13
+    EP12 -- No --> EP15
+    EP13 --> EP14 & PMR
+    EP14 --> EP15
+    PML1 --> PML2
+    PML2 -- Yes --> PML3
+    PML2 -- No --> PML4
+    PML4 --> PML5
+    PML5 -- Yes --> PML6
+    PML5 -- No --> PML7
+    PML7 --> PML8 & PV
+    PML8 --> PML4 & PML9
+    PML6 --> PML4
+    PML3 --> PML1
+    PMR1 --> PMR2
+    PMR2 -- Yes --> PMR3
+    PMR2 -- No --> PMR4
+    PMR4 --> PMR5
+    PMR5 --> PMR6
+    PMR6 -- No --> PMR7
+    PMR6 -- Yes --> PMR8
+    PMR8 --> PMR9
+    PMR9 -- Yes --> PMR10
+    PMR9 -- No --> PMR11
+    PMR11 --> PMR12 & PV
+    PMR12 --> PMR8 & PMR13
+    PMR10 --> PMR8
+    PMR7 --> PMR1
+    PV1 --> PV2
+    PV2 --> PV3
+    PV3 -- No --> PV4
+    PV3 -- Yes --> PV5
+    PV5 --> PV6
+    PV6 --> PV7
+    PV7 --> PV8
+    PV8 --> PV9
+    PV9 --> PV10
+    PV10 --> PV11
+    PV11 --> PV12
+    PV12 --> PV13
+    PV13 --> PV14
+    PV14 --> PV15
+    PV15 --> PV16
+    PV16 --> PV17
+    EP15 --> EP16@{ label: "Add variable_name col<br>split name on '-'" }
+    EP16 --> EP17["Sort by variable_name,<br>name, bin"]
+    EP17 --> EP18["Re-index bin per variable_name<br>cumcount + 1"]
+    EP18 --> EP19["Drop variable_name col"]
+    EP19 --> EP20["Return resultado DataFrame"]
     I --> EP
-    EP --> J[Check for duplicate<br/>code+bin pairs]
-    J -->|Duplicates found| K[Print warning + rows]
-    J --> L[Save resultado to<br/>ruta_csv_salida CSV]
+    EP --> J["Check for duplicate<br>code+bin pairs"] & Q["Save to<br>ruta_csv_salida_personas CSV<br>suffix _personas"]
+    J -- Duplicates found --> K["Print warning + rows"]
+    J --> L["Save resultado to<br>ruta_csv_salida CSV"]
     K --> L
-
-    L --> M{variables_identificadoras_personas<br/>in config?}
-    M -->|No| Z
-    M -->|Yes| N[Load rutas_csv_personas CSVs<br/>with id cols as str]
-    N --> O[Load alias CSV for personas<br/>fallback to general alias]
-    O --> P[/ejecutar_procesamiento<br/>PERSONAS/]
+    L --> M{"variables_identificadoras_personas<br>in config?"}
+    M -- No --> Z["Print total execution time"]
+    M -- Yes --> N["Load rutas_csv_personas CSVs<br>with id cols as str"]
+    N --> O["Load alias CSV for personas<br>fallback to general alias"]
+    O --> P[/"ejecutar_procesamiento<br>PERSONAS"/]
     P --> EP
-    EP --> Q[Save to<br/>ruta_csv_salida_personas CSV<br/>suffix _personas]
     Q --> Z
+    Z --> ZZ(["END"])
 
-    Z[Print total execution time] --> ZZ([END])
+    EP16@{ shape: rect}
