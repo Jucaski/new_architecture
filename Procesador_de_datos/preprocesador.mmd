@@ -1,0 +1,72 @@
+flowchart TD
+    A([START]) --> B[Parse CLI args<br/>--config preprocesador_example_ensanut.json]
+    B --> C[Load JSON config file]
+    C --> D[Load dataset CSV<br/>salud_hogar_orig_lower_promedios_for_elastic.csv<br/>dtype=str]
+    D --> D1{Unnamed:0<br/>column?}
+    D1 -- Yes --> D2[Drop Unnamed:0]
+    D1 -- No --> E
+    D2 --> E[Load dictionary CSV<br/>21ensanut_a20_hias_rework.csv<br/>dtype=str]
+    E --> E1{Unnamed:0<br/>column?}
+    E1 -- Yes --> E2[Drop Unnamed:0]
+    E1 -- No --> F
+    E2 --> F
+
+    F[Validate all config fields<br/>ruta_salida_dataset, ruta_salida_alias<br/>columna_diccionario_nombres='var'<br/>columna_diccionario_posibles_valores='posibles_valores_alias'<br/>columna_diccionario_alias='var_alias'<br/>columna_diccionario_posibles_valores_alias='posibles_valores']
+
+    F --> G[validar_diccionario<br/>1 - No nulls in 'var'<br/>2 - No duplicates in 'var'<br/>3 - posibles_valores_alias are valid Python lists<br/>4 - posibles_valores lists same length as posibles_valores_alias]
+
+    G --> H[Init Preprocesador<br/>df, diccionario_datos, 'var',<br/>'posibles_valores_alias']
+
+    H --> I[eliminar_cadenas_vacias<br/>Replace empty/whitespace strings with pd.NA]
+
+    I --> J{columna_diccionario_tipos<br/>configured?}
+    J -- No --> K
+    J -- Yes --> J1[convertir_tipos] --> K
+
+    K{columna_diccionario_filtro_excluir<br/>configured?}
+    K -- No --> L
+    K -- Yes --> K1[excluir_variables] --> L
+
+    L([procesar_agrupacion LUGARES<br/>variables_identificadoras = municipio])
+
+    L --> M[agrupar_total_datos<br/>Group by municipio → conteo total_datos]
+    M --> N[generar_alias_total_datos<br/>conteo::total_datos → conteo::total_datos]
+
+    N --> O[[Loop: variables_a_agrupar_lugares]]
+
+    O --> P1
+
+    subgraph ITER1 [Iteration 1 — tipo_variables = categorico]
+        P1[variables_a_agrupar_list = empty<br/>variables_a_agrupar_regex = empty]
+        P1 --> P2[Filter dictionary where<br/>var_type IN options]
+        P2 --> P3[Intersect result with df.columns<br/>→ variables_a_agrupar_total sorted]
+        P3 --> P4[agrupar_variables_categoricas<br/>Group by municipio<br/>melt → conteo per variable-value pair<br/>pivot_table → one col per variable-value]
+        P4 --> P5[generar_alias_variables_categoricas<br/>Map var-value → var_alias-posibles_valores alias]
+    end
+
+    P5 --> Q1
+
+    subgraph ITER2 [Iteration 2 — tipo_variables = numerico]
+        Q1[operacion = media<br/>variables_a_agrupar_list = empty<br/>variables_a_agrupar_regex = empty]
+        Q1 --> Q2[Filter dictionary where<br/>var_type IN abierta]
+        Q2 --> Q3[Intersect result with df.columns<br/>→ variables_a_agrupar_total sorted]
+        Q3 --> Q4[agrupar_variables_numericas<br/>Group by municipio<br/>Convert to numeric, skip non-numeric<br/>Apply media per group<br/>Prefix cols with media::]
+        Q4 --> Q5[generar_alias_variables_numericas<br/>Map media::var → media::var_alias]
+    end
+
+    Q5 --> R[functools.reduce inner join<br/>On municipio<br/>Join: total_datos + categorico + numerico]
+    R --> S[Merge alias dicts<br/>Build alias_df with columns:<br/>variable, alias, descripcion]
+
+    S --> T[Save lugares dataset CSV<br/>preprocesamiento_ensanut_example_mun.csv]
+    T --> U[Save lugares alias CSV<br/>preprocesamiento_ensanut_alias_example_mun.csv]
+
+    U --> V{variables_identificadoras_list_personas<br/>AND variables_a_agrupar_personas<br/>both present AND both lists?}
+
+    V -- Yes --> W([procesar_agrupacion PERSONAS<br/>same logic as LUGARES])
+    W --> X[Drop conteo::total_datos column<br/>from personas df]
+    X --> Y[Remove conteo::total_datos<br/>from personas alias_df]
+    Y --> Z[Save personas dataset CSV<br/>_personas.csv suffix]
+    Z --> ZA[Save personas alias CSV<br/>_personas.csv suffix]
+    ZA --> END
+
+    V -- No / empty lists --> END([END])

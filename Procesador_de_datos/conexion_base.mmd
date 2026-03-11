@@ -1,0 +1,102 @@
+flowchart TD
+    A([Start]) --> B[Parse CLI arguments<br/>--ruta-datos-lugares<br/>--ruta-datos-personas<br/>--ruta-datos-procesados<br/>--ruta-env<br/>--crear-tabla]
+    B --> C{At least one<br/>data file specified?}
+    C -- No --> ERR1([Raise ValueError])
+    C -- Yes --> D[Initialize empty<br/>dataframes dict]
+
+    D --> E{--ruta-datos-lugares<br/>or --ruta-datos-procesados<br/>provided?}
+    E -- Yes --> F{File exists?}
+    F -- No --> ERR2([Raise FileNotFoundError])
+    F -- Yes --> G[Read CSV → dataframes 'mun']
+    E -- No --> H{--ruta-datos-personas<br/>provided?}
+
+    G --> H
+    H -- Yes --> I{File exists?}
+    I -- No --> ERR3([Raise FileNotFoundError])
+    I -- Yes --> J[Read CSV → dataframes 'personas']
+    H -- No --> K[Continue]
+    J --> K
+
+    K --> L{.env file exists?}
+    L -- No --> ERR4([Raise FileNotFoundError])
+    L -- Yes --> M[Load env vars via dotenv]
+
+    M --> N[Init df_dicts, dict_cols_per_df,<br/>special_types_per_df]
+
+    N --> LOOP1_START[Loop over each key/df<br/>in dataframes]
+
+    LOOP1_START --> O[Loop over columns<br/>to detect special types]
+    O --> P{col starts<br/>with 'cells_'?}
+    P -- Yes --> Q{First non-null<br/>value is digit?}
+    Q -- Yes --> R["Mark col as INTEGER[]"]
+    Q -- No --> S["Mark col as TEXT[]"]
+    P -- No --> T{col starts<br/>with 'interval_'?}
+    T -- Yes --> U{Contains ':'<br/>in sample value?}
+    U -- Yes --> V["Mark col as NUMRANGE<br/>Transform 'min:max' → '[min,max)'"]
+    U -- No --> W[Mark col as TEXT]
+    T -- No --> X[Skip / use pandas dtype]
+
+    R --> Y[Identify cells_cols,<br/>data_cols, dict_cols]
+    S --> Y
+    V --> Y
+    W --> Y
+    X --> Y
+
+    Y --> Z[Extract unique dict rows<br/>from dict_cols]
+    Z --> AA[Derive 'valor' from name<br/>after first '-']
+    AA --> AB[Derive 'variable_name' from name<br/>before first '-']
+    AB --> AC[Build df_vars: unique<br/>variable_name + description]
+    AC --> AD[Assign sequential id to df_vars]
+
+    AD --> AE[Merge df_vars into df<br/>to get dict_id per row]
+    AE --> AF[Extract df_vals with columns:<br/>dict_id, valor, alias, bin,<br/>interval_* cols]
+    AF --> AG[Clean alias: strip prefix before '-']
+    AG --> AH[Assign sequential id to df_vals]
+    AH --> AI["Store df_vars and df_vals<br/>in df_dicts[key]"]
+    AI --> AJ[Merge values_id back<br/>into main dataframe]
+    AJ --> AK{More dataframes<br/>to process?}
+    AK -- Yes --> LOOP1_START
+    AK -- No --> AL[Open PostgreSQL connection<br/>using env vars]
+
+    AL --> AM[Open cursor]
+
+    AM --> LOOP2_START[Loop over each key/df<br/>in dataframes]
+
+    LOOP2_START --> AN[Determine table suffix<br/>mun → _mun<br/>personas → _personas]
+    AN --> AO[Set tabla_destino, tabla_dict,<br/>tabla_vals names]
+
+    AO --> AP{--crear-tabla<br/>flag set?}
+    AP -- Yes --> AQ[CREATE TABLE IF NOT EXISTS<br/>tabla_dict<br/>id, variable_name, description]
+    AQ --> AR[TRUNCATE tabla_dict CASCADE]
+    AP -- No --> AS[Skip table creation]
+
+    AR --> AT[Write df_vars to StringIO buffer<br/>with CSV header]
+    AS --> AT
+    AT --> AU[COPY buffer INTO tabla_dict<br/>via psycopg COPY]
+
+    AU --> AV{--crear-tabla<br/>flag set?}
+    AV -- Yes --> AW[Build column definitions<br/>for tabla_vals<br/>incl. interval_ cols with<br/>special types]
+    AW --> AX[DROP TABLE IF EXISTS tabla_vals CASCADE]
+    AX --> AY[CREATE TABLE tabla_vals<br/>with FK to tabla_dict]
+    AV -- No --> AZ[Skip table creation]
+
+    AY --> BA[Write df_vals to StringIO buffer<br/>with CSV header]
+    AZ --> BA
+    BA --> BB[COPY buffer INTO tabla_vals<br/>via psycopg COPY]
+
+    BB --> BC[Compute data_cols_current:<br/>exclude dict_cols, interval_,<br/>bin, metadata cols]
+
+    BC --> BD{--crear-tabla<br/>flag set?}
+    BD -- Yes --> BE[Build column definitions<br/>for tabla_destino<br/>incl. cells_ cols with<br/>special types]
+    BE --> BF[DROP TABLE IF EXISTS tabla_destino CASCADE]
+    BF --> BG[CREATE TABLE tabla_destino<br/>with FK to tabla_vals]
+    BD -- No --> BH[Skip table creation]
+
+    BG --> BI[Write df main cols to<br/>StringIO buffer with CSV header]
+    BH --> BI
+    BI --> BJ[COPY buffer INTO tabla_destino<br/>via psycopg COPY]
+
+    BJ --> BK{More dataframes<br/>to process?}
+    BK -- Yes --> LOOP2_START
+    BK -- No --> BL[conn.commit]
+    BL --> END([End])
